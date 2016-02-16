@@ -9,6 +9,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.apache.http.client.utils.URLEncodedUtils;
 import org.json.JSONObject;
@@ -33,74 +35,64 @@ public class HealthMonitor {
         System.setProperty("javax.net.ssl.trustStore", currentDir + "/src/main/resources/client-truststore.jks");
         System.setProperty("javax.net.ssl.trustStorePassword", "wso2carbon");
 
-        CloseableHttpClient httpclient = HttpClients.createDefault();
-        try {
-            String loginURI = "http://localhost:9763/store/site/blocks/user/login/ajax/login.jag";
-            String loginUser = "admin";
-            String loginPassword = "admin";
-            login(httpclient, loginURI, loginUser, loginPassword);
+//        final String host = "localhost";
+//        final String port = "9763";
+//
+//        CloseableHttpClient httpclient = HttpClients.createDefault();
+//        try {
+//            String loginURI = "http://" + host + ":" + port + "/store/site/blocks/user/login/ajax/login.jag";
+//            String loginUser = "admin";
+//            String loginPassword = "admin";
+//            login(httpclient, loginURI, loginUser, loginPassword);
+//
+//            String addApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-add/ajax/application-add.jag";
+//            String applicationName = "MyTestApplication";
+//            String applicationTier = "Unlimited";
+//            String applicationDescription = "";
+//            String applicationCallbackUrl = "";
+//            addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
+//                    applicationCallbackUrl);
+//
+//            String generateApplicationKeyUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
+//            String keyType = "PRODUCTION";
+//            String authorizedDomains = "ALL";
+//            String validityTime = "-1";
+//            String accessToken = generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
+//
+//            String addSubscritpionUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
+//            String apiName = "CalculatorAPI";
+//            String apiVersion = "1.0";
+//            String apiProvider = "admin";
+//            String apiTier = "Unlimited";
+//            addSubscription(httpclient, addSubscritpionUri, apiName, apiVersion, apiProvider, apiTier, applicationName);
+//
+//            HashMap<String, String> headers = new HashMap<String, String>();
+//            headers.put("Accept", "application/json");
+//            headers.put("Authorization", "Bearer " + accessToken);
+//
+//            HashMap<String, String> params = new HashMap<String, String>();
+//            params.put("x", "32");
+//            params.put("y", "49");
+//
+//            String apiPort = "8243";
+//            String apiUri = "https://" + host + ":" + apiPort + "/calc/1.0/add";
+//            callApiGet(httpclient, apiUri, headers, params);
+//
+//            String removeApplicationUri = "http://" + host + ":"+ port + "/store/site/blocks/application/application-remove/ajax/application-remove.jag";
+//            removeApplication(httpclient, removeApplicationUri, applicationName);
+//
+//        } finally {
+//            httpclient.close();
+//        }
+        ExecutorService executor = Executors.newFixedThreadPool(1);
+        Runnable worker = new WorkerThread("test");
+        executor.execute(worker);
+        executor.shutdown();
+        while (!executor.isTerminated()) {
 
-            String addApplicationUri = "http://localhost:9763/store/site/blocks/application/application-add/ajax/application-add.jag";
-            String applicationName = "MyTestApplication";
-            String applicationTier = "Unlimited";
-            String applicationDescription = "";
-            String applicationCallbackUrl = "";
-            addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
-                    applicationCallbackUrl);
-
-            String generateApplicationKeyUri = "http://localhost:9763/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
-            String keyType = "PRODUCTION";
-            String authorizedDomains = "ALL";
-            String validityTime = "-1";
-            String accessToken = generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
-
-            String addSubscritpionUri = "http://localhost:9763/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
-            String apiName = "CalculatorAPI";
-            String apiVersion = "1.0";
-            String apiProvider = "admin";
-            String apiTier = "Unlimited";
-            addSubscription(httpclient, addSubscritpionUri, apiName, apiVersion, apiProvider, apiTier, applicationName);
-
-            HashMap<String, String> headers = new HashMap<String, String>();
-            headers.put("Accept", "application/json");
-            headers.put("Authorization", "Bearer " + accessToken);
-
-            HashMap<String, String> params = new HashMap<String, String>();
-            params.put("x", "32");
-            params.put("y", "49");
-
-            String apiUri = "https://localhost:8243/calc/1.0/add";
-            callApiGet(httpclient, apiUri, headers, params);
-
-            String removeApplicationUri = "http://localhost:9763/store/site/blocks/application/application-remove/ajax/application-remove.jag";
-            removeApplication(httpclient, removeApplicationUri, applicationName);
-
-
-            HttpGet httpGet = new HttpGet(
-                    "http://localhost:9763/store/site/blocks/subscription/subscription-list/ajax/subscription-list.jag?action=getAllSubscriptions");
-            CloseableHttpResponse response1 = httpclient.execute(httpGet);
-            // The underlying HTTP connection is still held by the response object
-            // to allow the response content to be streamed directly from the network socket.
-            // In order to ensure correct deallocation of system resources
-            // the user MUST call CloseableHttpResponse#close() from a finally clause.
-            // Please note that if response content is not fully consumed the underlying
-            // connection cannot be safely re-used and will be shut down and discarded
-            // by the connection manager.
-            try {
-                System.out.println(response1.getStatusLine());
-                HttpEntity entity1 = response1.getEntity();
-                // do something useful with the response body
-                InputStream is = entity1.getContent();
-                String theString = IOUtils.toString(is, "UTF-8");
-//                System.out.println(theString);
-                // and ensure it is fully consumed
-                EntityUtils.consume(entity1);
-            } finally {
-                response1.close();
-            }
-        } finally {
-            httpclient.close();
         }
+
+        System.out.println("done.....");
     }
 
     public static void login(CloseableHttpClient httpClient, String Uri, String userName, String password)
@@ -247,5 +239,79 @@ public class HealthMonitor {
             response1.close();
         }
 
+    }
+
+    public static class WorkerThread implements Runnable {
+        private String message;
+        public WorkerThread(String s){
+            this.message=s;
+        }
+        public void run() {
+            final String host = "localhost";
+            final String port = "9763";
+
+            CloseableHttpClient httpclient = HttpClients.createDefault();
+            try {
+                String loginURI = "http://" + host + ":" + port + "/store/site/blocks/user/login/ajax/login.jag";
+                String loginUser = "admin";
+                String loginPassword = "admin";
+                login(httpclient, loginURI, loginUser, loginPassword);
+
+                String addApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-add/ajax/application-add.jag";
+                String applicationName = "MyTestApplication";
+                String applicationTier = "Unlimited";
+                String applicationDescription = "";
+                String applicationCallbackUrl = "";
+                addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
+                        applicationCallbackUrl);
+
+                String generateApplicationKeyUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
+                String keyType = "PRODUCTION";
+                String authorizedDomains = "ALL";
+                String validityTime = "-1";
+                String accessToken = generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
+
+                String addSubscritpionUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
+                String apiName = "CalculatorAPI";
+                String apiVersion = "1.0";
+                String apiProvider = "admin";
+                String apiTier = "Unlimited";
+                addSubscription(httpclient, addSubscritpionUri, apiName, apiVersion, apiProvider, apiTier, applicationName);
+
+                HashMap<String, String> headers = new HashMap<String, String>();
+                headers.put("Accept", "application/json");
+                headers.put("Authorization", "Bearer " + accessToken);
+
+                HashMap<String, String> params = new HashMap<String, String>();
+                params.put("x", "32");
+                params.put("y", "49");
+
+                String apiPort = "8243";
+                String apiUri = "https://" + host + ":" + apiPort + "/calc/1.0/add";
+                callApiGet(httpclient, apiUri, headers, params);
+
+                String removeApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-remove/ajax/application-remove.jag";
+                removeApplication(httpclient, removeApplicationUri, applicationName);
+
+                processmessage();
+            } catch (IOException e) {
+                System.err.println("Exception during monitoring: " + e.getMessage());
+            } finally {
+                try {
+                    if (httpclient != null) {
+                        httpclient.close();
+                    }
+                } catch( Exception e ) {
+                    System.err.println("Exception during closing http client: " + e.getMessage());
+                }
+            }
+        }
+        private void processmessage() {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 }
