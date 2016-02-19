@@ -1,0 +1,24 @@
+---
+#APIM Creadentials
+apimUsername: admin
+apimPassword: admin
+#APIM configs
+apimHost: localhost
+apimPort: 9763
+applicationName: MyHealthMonitorTestApplication
+applicationTier: Unlimited
+applicationKeyType: PRODUCTION
+applicationKeyValidityTime: -1
+#APIs
+apis:
+    apiName:
+        apiUrl: httpsomething
+        apiVersion: 1.0.0
+        apiProvider: myself
+        apiTir: tier1
+        parameters:
+            x: 5
+            y: 10
+# DAS credentials
+# DAS configurations
+...

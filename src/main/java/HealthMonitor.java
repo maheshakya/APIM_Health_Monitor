@@ -3,6 +3,8 @@
  * Created by maheshakya on 2/15/16.
  */
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -30,8 +32,11 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.util.EntityUtils;
+import org.yaml.snakeyaml.Yaml;
 
-
+/**
+ * This is the main class that runs the health monitor
+ */
 public class HealthMonitor {
     public static void main(String[] args) throws IOException {
 
@@ -40,64 +45,63 @@ public class HealthMonitor {
         System.setProperty("javax.net.ssl.trustStore", currentDir + "/src/main/resources/client-truststore.jks");
         System.setProperty("javax.net.ssl.trustStorePassword", "wso2carbon");
 
-//        final String host = "localhost";
-//        final String port = "9763";
-//
-//        CloseableHttpClient httpclient = HttpClients.createDefault();
-//        try {
-//            String loginURI = "http://" + host + ":" + port + "/store/site/blocks/user/login/ajax/login.jag";
-//            String loginUser = "admin";
-//            String loginPassword = "admin";
-//            login(httpclient, loginURI, loginUser, loginPassword);
-//
-//            String addApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-add/ajax/application-add.jag";
-//            String applicationName = "MyTestApplication";
-//            String applicationTier = "Unlimited";
-//            String applicationDescription = "";
-//            String applicationCallbackUrl = "";
-//            addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
-//                    applicationCallbackUrl);
-//
-//            String generateApplicationKeyUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
-//            String keyType = "PRODUCTION";
-//            String authorizedDomains = "ALL";
-//            String validityTime = "-1";
-//            String accessToken = generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
-//
-//            String addSubscritpionUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
-//            String apiName = "CalculatorAPI";
-//            String apiVersion = "1.0";
-//            String apiProvider = "admin";
-//            String apiTier = "Unlimited";
-//            addSubscription(httpclient, addSubscritpionUri, apiName, apiVersion, apiProvider, apiTier, applicationName);
-//
-//            HashMap<String, String> headers = new HashMap<String, String>();
-//            headers.put("Accept", "application/json");
-//            headers.put("Authorization", "Bearer " + accessToken);
-//
-//            HashMap<String, String> params = new HashMap<String, String>();
-//            params.put("x", "32");
-//            params.put("y", "49");
-//
-//            String apiPort = "8243";
-//            String apiUri = "https://" + host + ":" + apiPort + "/calc/1.0/add";
-//            callApiGet(httpclient, apiUri, headers, params);
-//
-//            String removeApplicationUri = "http://" + host + ":"+ port + "/store/site/blocks/application/application-remove/ajax/application-remove.jag";
-//            removeApplication(httpclient, removeApplicationUri, applicationName);
-//
-//        } finally {
-//            httpclient.close();
-//        }
-        String appName = "MyTestApplication";
-        String userName = "admin";
-        String password = "admin";
+
+
+        // Test Yaml
+        Yaml yaml = new Yaml();
+        Map<String, Object> configs = null;
+
+        try {
+            InputStream ios = new FileInputStream("src/main/resources/configs.yml");
+            // Parse the YAML file and return the output as a series of Maps and Lists
+            configs = (Map< String, Object>) yaml.load(ios);
+            System.out.println("ok");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+
+
+        String appName = (String) configs.get("applicationName");
+        String userName = (String) configs.get("apimUsername");
+        String password = (String) configs.get("apimPassword");
         String apiName = "CalculatorAPI";
         String apiVersion = "1.0";
         String apiProvider = "admin";
         String apiTier = "Unlimited";
+
+        final String host = "localhost";
+        final String port = "9763";
+        String accessToken = null;
+
+        CloseableHttpClient httpclient = HttpClients.createDefault();
+        try {
+            String loginURI = "http://" + host + ":" + port + Constants.APIM_LOGIN;
+            String loginUser = userName;
+            String loginPassword = password;
+            Utils.login(httpclient, loginURI, loginUser, loginPassword);
+
+            String addApplicationUri = "http://" + host + ":" + port + Constants.APIM_APPLICATION_ADD;
+            String applicationName = appName;
+            String applicationTier = "Unlimited";
+            String applicationDescription = "";
+            String applicationCallbackUrl = "";
+            Utils.addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
+                    applicationCallbackUrl);
+
+            String generateApplicationKeyUri = "http://" + host + ":" + port + Constants.APIM_SUBSCRIPTION_ADD;
+            String keyType = "PRODUCTION";
+            String authorizedDomains = "ALL";
+            String validityTime = "-1";
+            accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
+        } catch (IOException e) {
+            System.err.println("Exception during initializing: " + e.getMessage());
+        } finally {
+            httpclient.close();
+        }
         ExecutorService executor = Executors.newFixedThreadPool(1);
-        Runnable worker = new WorkerThread(appName, userName, password, apiName, apiVersion, apiProvider, apiTier);
+        Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion, apiProvider, apiTier);
         executor.execute(worker);
         executor.shutdown();
         while (!executor.isTerminated()) {
@@ -107,156 +111,12 @@ public class HealthMonitor {
         System.out.println("done.....");
     }
 
-    public static void login(CloseableHttpClient httpClient, String Uri, String userName, String password)
-            throws IOException {
-        HttpPost httpPost = new HttpPost(Uri);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        nvps.add(new BasicNameValuePair("action", "login"));
-        nvps.add(new BasicNameValuePair("username", userName));
-        nvps.add(new BasicNameValuePair("password", password));
-        httpPost.setEntity(new UrlEncodedFormEntity(nvps));
-        CloseableHttpResponse response2 = httpClient.execute(httpPost);
-        try {
-            System.out.println(response2.getStatusLine());
-            HttpEntity entity2 = response2.getEntity();
-            // do something useful with the response body
-            // and ensure it is fully consumed
-            EntityUtils.consume(entity2);
-        } finally {
-            response2.close();
-        }
-    }
-
-    public static void addApplication(CloseableHttpClient httpClient, String Uri, String applicationName, String tier,
-            String description, String callbackUrl) throws IOException {
-        HttpPost httpPost = new HttpPost(Uri);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        nvps.add(new BasicNameValuePair("action", "addApplication"));
-        nvps.add(new BasicNameValuePair("application", applicationName));
-        nvps.add(new BasicNameValuePair("tier", tier));
-        nvps.add(new BasicNameValuePair("description", description));
-        nvps.add(new BasicNameValuePair("callbackUrl", callbackUrl));
-        httpPost.setEntity(new UrlEncodedFormEntity(nvps));
-        CloseableHttpResponse response2 = httpClient.execute(httpPost);
-        try {
-            System.out.println(response2.getStatusLine());
-            HttpEntity entity2 = response2.getEntity();
-            // do something useful with the response body
-            // and ensure it is fully consumed
-            EntityUtils.consume(entity2);
-        } finally {
-            response2.close();
-        }
-    }
-
-    public static void removeApplication(CloseableHttpClient httpClient, String Uri, String applicationName) throws IOException {
-        HttpPost httpPost = new HttpPost(Uri);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        nvps.add(new BasicNameValuePair("action", "removeApplication"));
-        nvps.add(new BasicNameValuePair("application", applicationName));
-        httpPost.setEntity(new UrlEncodedFormEntity(nvps));
-        CloseableHttpResponse response2 = httpClient.execute(httpPost);
-        try {
-            System.out.println(response2.getStatusLine());
-            HttpEntity entity2 = response2.getEntity();
-            // do something useful with the response body
-            // and ensure it is fully consumed
-            EntityUtils.consume(entity2);
-        } finally {
-            response2.close();
-        }
-    }
-
-    public static String generateApplicationKey(CloseableHttpClient httpClient, String Uri, String applicationName, String keyType,
-                                      String callbackUrl, String authorizedDomains, String validityTime) throws IOException, JSONException {
-        HttpPost httpPost = new HttpPost(Uri);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        nvps.add(new BasicNameValuePair("action", "generateApplicationKey"));
-        nvps.add(new BasicNameValuePair("application", applicationName));
-        nvps.add(new BasicNameValuePair("keytype", keyType));
-        nvps.add(new BasicNameValuePair("callbackUrl", callbackUrl));
-        nvps.add(new BasicNameValuePair("AuthorizedDomains", authorizedDomains));
-        nvps.add(new BasicNameValuePair("validityTime", validityTime));
-        httpPost.setEntity(new UrlEncodedFormEntity(nvps));
-        CloseableHttpResponse response2 = httpClient.execute(httpPost);
-        try {
-            System.out.println(response2.getStatusLine());
-            HttpEntity entity1 = response2.getEntity();
-            // do something useful with the response body
-            InputStream is = entity1.getContent();
-            String theString = IOUtils.toString(is, "UTF-8");
-            System.out.println(theString);
-
-            JSONObject jsonObject = new JSONObject(theString);
-            String accessToken = jsonObject.getJSONObject("data").getJSONObject("key").getString("accessToken");
-
-            System.out.println(accessToken);
-
-            EntityUtils.consume(entity1);
-
-            return accessToken;
-        } finally {
-            response2.close();
-        }
-    }
-
-    public static void addSubscription(CloseableHttpClient httpClient, String Uri, String apiName, String apiVersion,
-                                      String apiProvider, String tier, String applicationName) throws IOException {
-        HttpPost httpPost = new HttpPost(Uri);
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        nvps.add(new BasicNameValuePair("action", "addAPISubscription"));
-        nvps.add(new BasicNameValuePair("name", apiName));
-        nvps.add(new BasicNameValuePair("version", apiVersion));
-        nvps.add(new BasicNameValuePair("provider", apiProvider));
-        nvps.add(new BasicNameValuePair("tier", tier));
-        nvps.add(new BasicNameValuePair("applicationName", applicationName));
-        httpPost.setEntity(new UrlEncodedFormEntity(nvps));
-        CloseableHttpResponse response2 = httpClient.execute(httpPost);
-        try {
-            System.out.println(response2.getStatusLine());
-            HttpEntity entity2 = response2.getEntity();
-            InputStream is = entity2.getContent();
-            String theString = IOUtils.toString(is, "UTF-8");
-            System.out.println(theString);
-
-            EntityUtils.consume(entity2);
-        } finally {
-            response2.close();
-        }
-    }
-
-    public static String callApiGet(CloseableHttpClient httpClient, String Uri, HashMap<String, String> headers,
-                                  HashMap<String, String> params) throws IOException {
-        String sc = null;
-        List<NameValuePair> nvps = new ArrayList<NameValuePair>();
-        for (Map.Entry<String, String> param: params.entrySet()) {
-            nvps.add(new BasicNameValuePair(param.getKey(), param.getValue()));
-        }
-        HttpGet httpGet = new HttpGet(Uri + "?" + URLEncodedUtils.format(nvps, "UTF-8"));
-        for (Map.Entry<String, String> header: headers.entrySet()) {
-            httpGet.addHeader(header.getKey(), header.getValue());
-        }
-        System.out.println(httpGet.getURI());
-        CloseableHttpResponse response1 = httpClient.execute(httpGet);
-        try {
-            sc = String.valueOf(response1.getStatusLine().getStatusCode());
-            System.out.println(sc);
-            HttpEntity entity1 = response1.getEntity();
-            // do something useful with the response body
-            InputStream is = entity1.getContent();
-            String output = IOUtils.toString(is, "UTF-8");
-            System.out.println(output);
-            // and ensure it is fully consumed
-            EntityUtils.consume(entity1);
-        } finally {
-            response1.close();
-        }
-        return sc;
-    }
-
     public static class WorkerThread implements Runnable {
 
+        private String apimHost;
+        private String apimPort;
         private String appName;
+        private String accessToken;
         private String userName;
         private String password;
         private String apiName;
@@ -264,8 +124,12 @@ public class HealthMonitor {
         private String apiProvider;
         private String apiTier;
 
-        public WorkerThread(String appName, String userName, String password, String apiName, String apiVersion, String apiProvider, String apiTier){
+
+        public WorkerThread(String apimHost, String apimPort, String appName, String accessToken, String userName, String password, String apiName, String apiVersion, String apiProvider, String apiTier){
+            this.apimHost = apimHost;
+            this.apimPort = apimPort;
             this.appName = appName;
+            this.accessToken = accessToken;
             this.userName = userName;
             this.password = password;
             this.apiName = apiName;
@@ -274,36 +138,20 @@ public class HealthMonitor {
             this.apiTier = apiTier;
         }
         public void run() {
-            final String host = "localhost";
-            final String port = "9763";
-
             CloseableHttpClient httpclient = HttpClients.createDefault();
             try {
-                String loginURI = "http://" + host + ":" + port + "/store/site/blocks/user/login/ajax/login.jag";
+                String loginURI = "http://" + apimHost + ":" + apimPort + Constants.APIM_LOGIN;
                 String loginUser = userName;
                 String loginPassword = password;
-                login(httpclient, loginURI, loginUser, loginPassword);
+                Utils.login(httpclient, loginURI, loginUser, loginPassword);
 
-                String addApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-add/ajax/application-add.jag";
-                String applicationName = appName;
-                String applicationTier = "Unlimited";
-                String applicationDescription = "";
-                String applicationCallbackUrl = "";
-                addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
-                        applicationCallbackUrl);
 
-                String generateApplicationKeyUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
-                String keyType = "PRODUCTION";
-                String authorizedDomains = "ALL";
-                String validityTime = "-1";
-                String accessToken = generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
-
-                String addSubscriptionUri = "http://" + host + ":" + port + "/store/site/blocks/subscription/subscription-add/ajax/subscription-add.jag";
+                String addSubscriptionUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_SUBSCRIPTION_ADD;
                 String apiName = this.apiName;
                 String apiVersion = this.apiVersion;
                 String apiProvider = this.apiProvider;
                 String apiTier = this.apiTier;
-                addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier, applicationName);
+                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier, appName);
 
                 HashMap<String, String> headers = new HashMap<String, String>();
                 headers.put("Accept", "application/json");
@@ -311,16 +159,16 @@ public class HealthMonitor {
 
                 HashMap<String, String> params = new HashMap<String, String>();
                 params.put("x", "32");
-                params.put("y", "4fs");
+                params.put("y", "4");
 
                 String apiPort = "8243";
-                String apiUri = "https://" + host + ":" + apiPort + "/calc/1.0/add";
+                String apiUri = "https://" + apimHost + ":" + apiPort + "/calc/1.0/add";
 
                 // Using http endpoint here, but should be https
                 String receiverUrl = "http://localhost:9780/endpoints/healthMonitorReceiver";
 
                 for (int i= 0; i<2; i++) {
-                    String sc = callApiGet(httpclient, apiUri, headers, params);
+                    String sc = Utils.callApiGet(httpclient, apiUri, headers, params);
 
                     JsonObject event = new JsonObject();
                     JsonObject payLoadData = new JsonObject();
@@ -349,8 +197,8 @@ public class HealthMonitor {
                     response1.close();
                 }
 
-                String removeApplicationUri = "http://" + host + ":" + port + "/store/site/blocks/application/application-remove/ajax/application-remove.jag";
-                removeApplication(httpclient, removeApplicationUri, applicationName);
+                String removeApplicationUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_APPLICATION_REMOVE;
+                Utils.removeApplication(httpclient, removeApplicationUri, appName);
 
             } catch (IOException e) {
                 System.err.println("Exception during monitoring: " + e.getMessage());
