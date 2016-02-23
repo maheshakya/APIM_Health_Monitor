@@ -7,10 +7,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -66,13 +63,18 @@ public class HealthMonitor {
         String appName = (String) configs.get("applicationName");
         String userName = (String) configs.get("apimUsername");
         String password = (String) configs.get("apimPassword");
+        String host = (String) configs.get("apimHost");
+        String port = String.valueOf(configs.get("apimPort"));
+        String appTier = (String) configs.get("applicationTier");
+        String appAuthorizedDomains = (String) configs.get("applicationAuthorizedDomains");
+        String appKeyType = (String) configs.get("applicationKeyType");
+        String appKeyValidationTime = String.valueOf(configs.get("applicationKeyValidityTime"));
+
         String apiName = "CalculatorAPI";
         String apiVersion = "1.0";
         String apiProvider = "admin";
         String apiTier = "Unlimited";
 
-        final String host = "localhost";
-        final String port = "9763";
         String accessToken = null;
 
         CloseableHttpClient httpclient = HttpClients.createDefault();
@@ -84,25 +86,37 @@ public class HealthMonitor {
 
             String addApplicationUri = "http://" + host + ":" + port + Constants.APIM_APPLICATION_ADD;
             String applicationName = appName;
-            String applicationTier = "Unlimited";
+            String applicationTier = appTier;
             String applicationDescription = "";
             String applicationCallbackUrl = "";
             Utils.addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
                     applicationCallbackUrl);
 
             String generateApplicationKeyUri = "http://" + host + ":" + port + Constants.APIM_SUBSCRIPTION_ADD;
-            String keyType = "PRODUCTION";
-            String authorizedDomains = "ALL";
-            String validityTime = "-1";
+            String keyType = appKeyType;
+            String authorizedDomains = appAuthorizedDomains;
+            String validityTime = appKeyValidationTime;
             accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
         } catch (IOException e) {
             System.err.println("Exception during initializing: " + e.getMessage());
         } finally {
             httpclient.close();
         }
-        ExecutorService executor = Executors.newFixedThreadPool(1);
-        Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion, apiProvider, apiTier);
-        executor.execute(worker);
+
+        LinkedHashMap apis = (LinkedHashMap) configs.get("apis");
+        if (apis == null) {
+            System.err.println("No APIs provided");
+        }
+        ExecutorService executor = Executors.newFixedThreadPool(apis.size());
+
+        for (Object api: apis.keySet()) {
+            LinkedHashMap apiConfig = (LinkedHashMap) apis.get(api);
+            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api.toString(), apiConfig.get("apiVersion").toString(), apiConfig.get("apiProvider").toString(), apiConfig.get("apiTier").toString());
+            executor.execute(worker);
+        }
+
+//        Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion, apiProvider, apiTier);
+//        executor.execute(worker);
         executor.shutdown();
         while (!executor.isTerminated()) {
 

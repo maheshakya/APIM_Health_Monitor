@@ -7,15 +7,16 @@ apimHost: localhost
 apimPort: 9763
 applicationName: MyHealthMonitorTestApplication
 applicationTier: Unlimited
+applicationAuthorizedDomains: ALL
 applicationKeyType: PRODUCTION
 applicationKeyValidityTime: -1
 #APIs
 apis:
-    apiName:
+    CalculatorAPI:
         apiUrl: httpsomething
-        apiVersion: 1.0.0
-        apiProvider: myself
-        apiTir: tier1
+        apiVersion: 1.0
+        apiProvider: admin
+        apiTier: Unlimited
         parameters:
             x: 5
             y: 10
