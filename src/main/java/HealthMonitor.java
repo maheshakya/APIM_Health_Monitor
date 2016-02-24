@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.axis2.util.Base64;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -87,6 +88,8 @@ public class HealthMonitor {
                     applicationCallbackUrl, authorizedDomains, validityTime);
         } catch (IOException e) {
             System.err.println("Exception during initializing: " + e.getMessage());
+        } catch (JSONException e) {
+            System.err.println("Exception during initializing: " + e.getMessage());
         } finally {
             httpclient.close();
         }
@@ -102,18 +105,15 @@ public class HealthMonitor {
             HashMap<String, String> parameters = new HashMap<String, String>();
             LinkedHashMap<String, String> parameterConfig = (LinkedHashMap<String, String>) apiConfig.get("parameters");
             for (String param : parameterConfig.keySet()) {
-                parameters.put(param, parameterConfig.get(param));
+                parameters.put(param, String.valueOf(parameterConfig.get(param)));
             }
-            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api,
+            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api, apiConfig.get("apiMethod").toString(),
                     String.valueOf(apiConfig.get("apiVersion")), apiConfig.get("apiProvider").toString(),
                     apiConfig.get("apiTier").toString(), apiConfig.get("apiUrl").toString(), parameters, dasUsername,
                     dasPassword, dasReceiverUrl);
             executor.execute(worker);
         }
 
-        // Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion,
-        // apiProvider, apiTier);
-        // executor.execute(worker);
         executor.shutdown();
         while (!executor.isTerminated()) {
 
@@ -131,6 +131,7 @@ public class HealthMonitor {
         private String userName;
         private String password;
         private String apiName;
+        private String apiMethod;
         private String apiVersion;
         private String apiProvider;
         private String apiTier;
@@ -141,7 +142,7 @@ public class HealthMonitor {
         private String dasReceiverUrl;
 
         public WorkerThread(String apimHost, String apimPort, String appName, String accessToken, String userName,
-                String password, String apiName, String apiVersion, String apiProvider, String apiTier, String apiUrl,
+                String password, String apiName, String apiMethod, String apiVersion, String apiProvider, String apiTier, String apiUrl,
                 HashMap<String, String> apiParameters, String dasUsername, String dasPassword, String dasReceiverUrl) {
             this.apimHost = apimHost;
             this.apimPort = apimPort;
@@ -150,6 +151,7 @@ public class HealthMonitor {
             this.userName = userName;
             this.password = password;
             this.apiName = apiName;
+            this.apiMethod = apiMethod;
             this.apiVersion = apiVersion;
             this.apiProvider = apiProvider;
             this.apiTier = apiTier;
@@ -165,34 +167,22 @@ public class HealthMonitor {
             CloseableHttpClient httpclient = HttpClients.createDefault();
             try {
                 String loginURI = "http://" + apimHost + ":" + apimPort + Constants.APIM_LOGIN;
-                String loginUser = userName;
-                String loginPassword = password;
-                Utils.login(httpclient, loginURI, loginUser, loginPassword);
+                Utils.login(httpclient, loginURI, userName, password);
 
                 String addSubscriptionUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_SUBSCRIPTION_ADD;
-                String apiName = this.apiName;
-                String apiVersion = this.apiVersion;
-                String apiProvider = this.apiProvider;
-                String apiTier = this.apiTier;
-                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier,
-                        appName);
+                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier, appName);
 
                 HashMap<String, String> headers = new HashMap<String, String>();
                 // headers.put("Accept", "application/json");
                 headers.put("Authorization", "Bearer " + accessToken);
 
-                HashMap<String, String> params = new HashMap<String, String>();
-                params.put("x", "32");
-                params.put("y", "4");
-
-                String apiPort = "8243";
-                String apiUri = "https://" + apimHost + ":" + apiPort + "/calc/1.0/add";
+                HashMap<String, String> params = apiParameters;
 
                 // Using http endpoint here, but should be https
-                String receiverUrl = "http://localhost:9780/endpoints/healthMonitorReceiver";
+                String receiverUrl = dasReceiverUrl;
 
                 for (int i = 0; i < 2; i++) {
-                    String sc = Utils.callApiGet(httpclient, apiUri, headers, params);
+                    String sc = Utils.callApi(httpclient, apiMethod, apiUrl, headers, params);
 
                     JsonObject event = new JsonObject();
                     JsonObject payLoadData = new JsonObject();
@@ -206,9 +196,8 @@ public class HealthMonitor {
                     HttpPost postMethod = new HttpPost(receiverUrl);
                     StringEntity entity = new StringEntity(eventString);
                     postMethod.setEntity(entity);
-                    // Uncomment when https
-                    // postMethod.setHeader("Authorization", "Basic " + Base64.encode((dasUserName + ":" +
-                    // dasPassword).getBytes()));
+
+                    postMethod.setHeader("Authorization", "Basic " + Base64.encode((dasUsername + ":" + dasPassword).getBytes()));
                     CloseableHttpResponse response1 = httpclient.execute(postMethod);
                     System.out.println(response1.getStatusLine());
 
@@ -226,8 +215,6 @@ public class HealthMonitor {
                 Utils.removeApplication(httpclient, removeApplicationUri, appName);
 
             } catch (IOException e) {
-                System.err.println("Exception during monitoring: " + e.getMessage());
-            } catch (JSONException e) {
                 System.err.println("Exception during monitoring: " + e.getMessage());
             } finally {
                 try {

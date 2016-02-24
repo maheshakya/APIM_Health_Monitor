@@ -141,8 +141,8 @@ public class Utils {
         }
     }
 
-    public static String callApiGet(CloseableHttpClient httpClient, String Uri, HashMap<String, String> headers,
-                                    HashMap<String, String> params) throws IOException {
+    public static String callApi(CloseableHttpClient httpClient, String apiMethod, String Uri, HashMap<String, String> headers,
+                                 HashMap<String, String> params) throws IOException {
         String sc = null;
         List<NameValuePair> nvps = new ArrayList<NameValuePair>();
         for (Map.Entry<String, String> param: params.entrySet()) {
