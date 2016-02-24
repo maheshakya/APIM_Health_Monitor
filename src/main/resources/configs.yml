@@ -13,7 +13,7 @@ applicationKeyValidityTime: -1
 #APIs
 apis:
     CalculatorAPI:
-        apiUrl: httpsomething
+        apiUrl: https://localhost:8243/calc/1.0/add
         apiVersion: 1.0
         apiProvider: admin
         apiTier: Unlimited
@@ -21,5 +21,8 @@ apis:
             x: 5
             y: 10
 # DAS credentials
+dasUsername: admin
+dasPassword: admin
 # DAS configurations
+dasReceiverUrl: http://localhost:9780/endpoints/healthMonitorReceiver
 ...

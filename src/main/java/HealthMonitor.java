@@ -3,33 +3,26 @@
  * Created by maheshakya on 2/15/16.
  */
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.*;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import com.google.gson.JsonObject;
-import org.apache.http.client.utils.URLEncodedUtils;
-import org.apache.http.entity.StringEntity;
-import org.eclipse.osgi.internal.signedcontent.Base64;
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpEntity;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.http.message.BasicNameValuePair;
-import org.apache.http.util.EntityUtils;
+import org.json.JSONException;
 import org.yaml.snakeyaml.Yaml;
+
+import com.google.gson.JsonObject;
 
 /**
  * This is the main class that runs the health monitor
@@ -42,8 +35,6 @@ public class HealthMonitor {
         System.setProperty("javax.net.ssl.trustStore", currentDir + "/src/main/resources/client-truststore.jks");
         System.setProperty("javax.net.ssl.trustStorePassword", "wso2carbon");
 
-
-
         // Test Yaml
         Yaml yaml = new Yaml();
         Map<String, Object> configs = null;
@@ -51,14 +42,12 @@ public class HealthMonitor {
         try {
             InputStream ios = new FileInputStream("src/main/resources/configs.yml");
             // Parse the YAML file and return the output as a series of Maps and Lists
-            configs = (Map< String, Object>) yaml.load(ios);
+            configs = (Map<String, Object>) yaml.load(ios);
             System.out.println("ok");
 
         } catch (Exception e) {
             e.printStackTrace();
         }
-
-
 
         String appName = (String) configs.get("applicationName");
         String userName = (String) configs.get("apimUsername");
@@ -69,11 +58,9 @@ public class HealthMonitor {
         String appAuthorizedDomains = (String) configs.get("applicationAuthorizedDomains");
         String appKeyType = (String) configs.get("applicationKeyType");
         String appKeyValidationTime = String.valueOf(configs.get("applicationKeyValidityTime"));
-
-        String apiName = "CalculatorAPI";
-        String apiVersion = "1.0";
-        String apiProvider = "admin";
-        String apiTier = "Unlimited";
+        String dasUsername = (String) configs.get("dasUsername");
+        String dasPassword = (String) configs.get("dasPassword");
+        String dasReceiverUrl = (String) configs.get("dasReceiverUrl");
 
         String accessToken = null;
 
@@ -89,34 +76,44 @@ public class HealthMonitor {
             String applicationTier = appTier;
             String applicationDescription = "";
             String applicationCallbackUrl = "";
-            Utils.addApplication(httpclient, addApplicationUri, applicationName, applicationTier, applicationDescription,
-                    applicationCallbackUrl);
+            Utils.addApplication(httpclient, addApplicationUri, applicationName, applicationTier,
+                    applicationDescription, applicationCallbackUrl);
 
             String generateApplicationKeyUri = "http://" + host + ":" + port + Constants.APIM_SUBSCRIPTION_ADD;
             String keyType = appKeyType;
             String authorizedDomains = appAuthorizedDomains;
             String validityTime = appKeyValidationTime;
-            accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType, applicationCallbackUrl, authorizedDomains, validityTime);
+            accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType,
+                    applicationCallbackUrl, authorizedDomains, validityTime);
         } catch (IOException e) {
             System.err.println("Exception during initializing: " + e.getMessage());
         } finally {
             httpclient.close();
         }
 
-        LinkedHashMap apis = (LinkedHashMap) configs.get("apis");
+        LinkedHashMap<String, LinkedHashMap> apis = (LinkedHashMap<String, LinkedHashMap>) configs.get("apis");
         if (apis == null) {
             System.err.println("No APIs provided");
         }
         ExecutorService executor = Executors.newFixedThreadPool(apis.size());
 
-        for (Object api: apis.keySet()) {
-            LinkedHashMap apiConfig = (LinkedHashMap) apis.get(api);
-            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api.toString(), apiConfig.get("apiVersion").toString(), apiConfig.get("apiProvider").toString(), apiConfig.get("apiTier").toString());
+        for (String api : apis.keySet()) {
+            LinkedHashMap<String, Object> apiConfig = (LinkedHashMap<String, Object>) apis.get(api);
+            HashMap<String, String> parameters = new HashMap<String, String>();
+            LinkedHashMap<String, String> parameterConfig = (LinkedHashMap<String, String>) apiConfig.get("parameters");
+            for (String param : parameterConfig.keySet()) {
+                parameters.put(param, parameterConfig.get(param));
+            }
+            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api,
+                    String.valueOf(apiConfig.get("apiVersion")), apiConfig.get("apiProvider").toString(),
+                    apiConfig.get("apiTier").toString(), apiConfig.get("apiUrl").toString(), parameters, dasUsername,
+                    dasPassword, dasReceiverUrl);
             executor.execute(worker);
         }
 
-//        Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion, apiProvider, apiTier);
-//        executor.execute(worker);
+        // Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, apiName, apiVersion,
+        // apiProvider, apiTier);
+        // executor.execute(worker);
         executor.shutdown();
         while (!executor.isTerminated()) {
 
@@ -137,9 +134,15 @@ public class HealthMonitor {
         private String apiVersion;
         private String apiProvider;
         private String apiTier;
+        private String apiUrl;
+        private HashMap<String, String> apiParameters;
+        private String dasUsername;
+        private String dasPassword;
+        private String dasReceiverUrl;
 
-
-        public WorkerThread(String apimHost, String apimPort, String appName, String accessToken, String userName, String password, String apiName, String apiVersion, String apiProvider, String apiTier){
+        public WorkerThread(String apimHost, String apimPort, String appName, String accessToken, String userName,
+                String password, String apiName, String apiVersion, String apiProvider, String apiTier, String apiUrl,
+                HashMap<String, String> apiParameters, String dasUsername, String dasPassword, String dasReceiverUrl) {
             this.apimHost = apimHost;
             this.apimPort = apimPort;
             this.appName = appName;
@@ -150,7 +153,14 @@ public class HealthMonitor {
             this.apiVersion = apiVersion;
             this.apiProvider = apiProvider;
             this.apiTier = apiTier;
+            this.apiUrl = apiUrl;
+            this.apiParameters = apiParameters;
+            this.dasUsername = dasUsername;
+            this.dasPassword = password;
+            this.dasReceiverUrl = dasReceiverUrl;
+
         }
+
         public void run() {
             CloseableHttpClient httpclient = HttpClients.createDefault();
             try {
@@ -159,16 +169,16 @@ public class HealthMonitor {
                 String loginPassword = password;
                 Utils.login(httpclient, loginURI, loginUser, loginPassword);
 
-
                 String addSubscriptionUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_SUBSCRIPTION_ADD;
                 String apiName = this.apiName;
                 String apiVersion = this.apiVersion;
                 String apiProvider = this.apiProvider;
                 String apiTier = this.apiTier;
-                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier, appName);
+                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier,
+                        appName);
 
                 HashMap<String, String> headers = new HashMap<String, String>();
-                headers.put("Accept", "application/json");
+                // headers.put("Accept", "application/json");
                 headers.put("Authorization", "Bearer " + accessToken);
 
                 HashMap<String, String> params = new HashMap<String, String>();
@@ -181,7 +191,7 @@ public class HealthMonitor {
                 // Using http endpoint here, but should be https
                 String receiverUrl = "http://localhost:9780/endpoints/healthMonitorReceiver";
 
-                for (int i= 0; i<2; i++) {
+                for (int i = 0; i < 2; i++) {
                     String sc = Utils.callApiGet(httpclient, apiUri, headers, params);
 
                     JsonObject event = new JsonObject();
@@ -197,7 +207,8 @@ public class HealthMonitor {
                     StringEntity entity = new StringEntity(eventString);
                     postMethod.setEntity(entity);
                     // Uncomment when https
-//                    postMethod.setHeader("Authorization", "Basic " + Base64.encode((dasUserName + ":" + dasPassword).getBytes()));
+                    // postMethod.setHeader("Authorization", "Basic " + Base64.encode((dasUserName + ":" +
+                    // dasPassword).getBytes()));
                     CloseableHttpResponse response1 = httpclient.execute(postMethod);
                     System.out.println(response1.getStatusLine());
 
@@ -223,11 +234,12 @@ public class HealthMonitor {
                     if (httpclient != null) {
                         httpclient.close();
                     }
-                } catch( Exception e ) {
+                } catch (Exception e) {
                     System.err.println("Exception during closing http client: " + e.getMessage());
                 }
             }
         }
+
         private void processmessage() {
             try {
                 Thread.sleep(2000);
