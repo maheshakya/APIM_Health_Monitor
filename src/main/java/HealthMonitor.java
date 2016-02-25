@@ -1,8 +1,3 @@
-
-/**
- * Created by maheshakya on 2/15/16.
- */
-
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -12,31 +7,27 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.apache.axis2.util.Base64;
-import org.apache.commons.io.IOUtils;
-import org.apache.http.HttpEntity;
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.log4j.Logger;
 import org.json.JSONException;
 import org.yaml.snakeyaml.Yaml;
-
-import com.google.gson.JsonObject;
 
 /**
  * This is the main class that runs the health monitor
  */
 public class HealthMonitor {
+
+    private static Logger logger = Logger.getLogger(HealthMonitor.class);
+
     public static void main(String[] args) throws IOException {
 
-        System.out.println("Starting.....");
+        logger.info("Starting.....");
         String currentDir = System.getProperty("user.dir");
         System.setProperty("javax.net.ssl.trustStore", currentDir + "/src/main/resources/client-truststore.jks");
         System.setProperty("javax.net.ssl.trustStorePassword", "wso2carbon");
 
-        // Test Yaml
+        // Init Yaml
         Yaml yaml = new Yaml();
         Map<String, Object> configs = null;
 
@@ -44,10 +35,9 @@ public class HealthMonitor {
             InputStream ios = new FileInputStream("src/main/resources/configs.yml");
             // Parse the YAML file and return the output as a series of Maps and Lists
             configs = (Map<String, Object>) yaml.load(ios);
-            System.out.println("ok");
-
+            logger.info("Read configs...");
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error("Failed to read configs from file...");
         }
 
         String appName = (String) configs.get("applicationName");
@@ -63,63 +53,70 @@ public class HealthMonitor {
         String dasPassword = (String) configs.get("dasPassword");
         String dasReceiverUrl = (String) configs.get("dasReceiverUrl");
 
+        // Validate main configs
+        if (appName == null || userName == null || password == null || host == null || port == null || appTier == null
+                || appAuthorizedDomains == null || appKeyType == null || appKeyValidationTime == null
+                || dasUsername == null || dasPassword == null || dasReceiverUrl == null) {
+            logger.error("Config info missing ...");
+        }
+
         String accessToken = null;
 
         CloseableHttpClient httpclient = HttpClients.createDefault();
         try {
+            // Login to APIM
             String loginURI = "http://" + host + ":" + port + Constants.APIM_LOGIN;
-            String loginUser = userName;
-            String loginPassword = password;
-            Utils.login(httpclient, loginURI, loginUser, loginPassword);
+            Utils.login(httpclient, loginURI, userName, password);
 
+            // Add application for monitoring
             String addApplicationUri = "http://" + host + ":" + port + Constants.APIM_APPLICATION_ADD;
-            String applicationName = appName;
-            String applicationTier = appTier;
-            String applicationDescription = "";
-            String applicationCallbackUrl = "";
-            Utils.addApplication(httpclient, addApplicationUri, applicationName, applicationTier,
-                    applicationDescription, applicationCallbackUrl);
+            Utils.addApplication(httpclient, addApplicationUri, appName, appTier, "", "");
 
+            // Generate application key
             String generateApplicationKeyUri = "http://" + host + ":" + port + Constants.APIM_SUBSCRIPTION_ADD;
-            String keyType = appKeyType;
-            String authorizedDomains = appAuthorizedDomains;
-            String validityTime = appKeyValidationTime;
-            accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, applicationName, keyType,
-                    applicationCallbackUrl, authorizedDomains, validityTime);
+            accessToken = Utils.generateApplicationKey(httpclient, generateApplicationKeyUri, appName, appKeyType, "",
+                    appAuthorizedDomains, appKeyValidationTime);
         } catch (IOException e) {
-            System.err.println("Exception during initializing: " + e.getMessage());
+            logger.error("Exception during initializing: " + e.getMessage());
         } catch (JSONException e) {
-            System.err.println("Exception during initializing: " + e.getMessage());
-        } finally {
-            httpclient.close();
+            logger.error("Exception during initializing: " + e.getMessage());
         }
 
+        // Get APIs
         LinkedHashMap<String, LinkedHashMap> apis = (LinkedHashMap<String, LinkedHashMap>) configs.get("apis");
         if (apis == null) {
-            System.err.println("No APIs provided");
+            logger.error("No APIs provided");
         }
+
+        // Create thread pool for the number of APIs
         ExecutorService executor = Executors.newFixedThreadPool(apis.size());
 
         for (String api : apis.keySet()) {
             LinkedHashMap<String, Object> apiConfig = (LinkedHashMap<String, Object>) apis.get(api);
             HashMap<String, String> parameters = new HashMap<String, String>();
             LinkedHashMap<String, String> parameterConfig = (LinkedHashMap<String, String>) apiConfig.get("parameters");
-            for (String param : parameterConfig.keySet()) {
-                parameters.put(param, String.valueOf(parameterConfig.get(param)));
+            if (parameterConfig != null) {
+                for (String param : parameterConfig.keySet()) {
+                    parameters.put(param, String.valueOf(parameterConfig.get(param)));
+                }
             }
-            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api, apiConfig.get("apiMethod").toString(),
-                    String.valueOf(apiConfig.get("apiVersion")), apiConfig.get("apiProvider").toString(),
-                    apiConfig.get("apiTier").toString(), apiConfig.get("apiUrl").toString(), parameters, dasUsername,
-                    dasPassword, dasReceiverUrl);
+            // Need to validate API configs!!!
+            Runnable worker = new WorkerThread(host, port, appName, accessToken, userName, password, api,
+                    apiConfig.get("apiMethod").toString(), String.valueOf(apiConfig.get("apiVersion")),
+                    apiConfig.get("apiProvider").toString(), apiConfig.get("apiTier").toString(),
+                    apiConfig.get("apiUrl").toString(), parameters, dasUsername, dasPassword, dasReceiverUrl);
             executor.execute(worker);
         }
 
         executor.shutdown();
         while (!executor.isTerminated()) {
-
         }
 
-        System.out.println("done.....");
+        String removeApplicationUri = "http://" + host + ":" + port + Constants.APIM_APPLICATION_REMOVE;
+        Utils.removeApplication(httpclient, removeApplicationUri, appName);
+        httpclient.close();
+
+        logger.info("Done.....");
     }
 
     public static class WorkerThread implements Runnable {
@@ -141,9 +138,13 @@ public class HealthMonitor {
         private String dasPassword;
         private String dasReceiverUrl;
 
+        private String lastTwoSecondsStatus;
+        private String lastSixSecondsStatus;
+
         public WorkerThread(String apimHost, String apimPort, String appName, String accessToken, String userName,
-                String password, String apiName, String apiMethod, String apiVersion, String apiProvider, String apiTier, String apiUrl,
-                HashMap<String, String> apiParameters, String dasUsername, String dasPassword, String dasReceiverUrl) {
+                String password, String apiName, String apiMethod, String apiVersion, String apiProvider,
+                String apiTier, String apiUrl, HashMap<String, String> apiParameters, String dasUsername,
+                String dasPassword, String dasReceiverUrl) {
             this.apimHost = apimHost;
             this.apimPort = apimPort;
             this.appName = appName;
@@ -170,68 +171,57 @@ public class HealthMonitor {
                 Utils.login(httpclient, loginURI, userName, password);
 
                 String addSubscriptionUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_SUBSCRIPTION_ADD;
-                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier, appName);
+                Utils.addSubscription(httpclient, addSubscriptionUri, apiName, apiVersion, apiProvider, apiTier,
+                        appName);
 
                 HashMap<String, String> headers = new HashMap<String, String>();
-                // headers.put("Accept", "application/json");
                 headers.put("Authorization", "Bearer " + accessToken);
 
                 HashMap<String, String> params = apiParameters;
 
-                // Using http endpoint here, but should be https
-                String receiverUrl = dasReceiverUrl;
+                HashMap<String, String> payloads;
+                int totalTime = 0;
+                int interval_1 = Constants.INTERVAL_1;
+                int interval_2 = Constants.INTERVAL_2;
 
+                lastTwoSecondsStatus = Utils.callApi(httpclient, apiMethod, apiUrl, headers, params);
+                lastSixSecondsStatus = lastTwoSecondsStatus;
+
+                // Loop should be continued until user terminates
                 for (int i = 0; i < 2; i++) {
-                    String sc = Utils.callApi(httpclient, apiMethod, apiUrl, headers, params);
+                    payloads = new HashMap<String, String>();
+                    payloads.put(Constants.api_name, apiName);
+                    payloads.put(Constants.ATTRIBUTE_INTERVAL_1, lastTwoSecondsStatus);
+                    payloads.put(Constants.ATTRIBUTE_INTERVAL_2, lastSixSecondsStatus);
 
-                    JsonObject event = new JsonObject();
-                    JsonObject payLoadData = new JsonObject();
+                    Utils.publishToDas(httpclient, payloads, dasReceiverUrl, dasUsername, dasPassword);
 
-                    payLoadData.addProperty("status_code", sc);
-
-                    event.add("payloadData", payLoadData);
-
-                    String eventString = "{\"event\": " + event + "}";
-
-                    HttpPost postMethod = new HttpPost(receiverUrl);
-                    StringEntity entity = new StringEntity(eventString);
-                    postMethod.setEntity(entity);
-
-                    postMethod.setHeader("Authorization", "Basic " + Base64.encode((dasUsername + ":" + dasPassword).getBytes()));
-                    CloseableHttpResponse response1 = httpclient.execute(postMethod);
-                    System.out.println(response1.getStatusLine());
-
-                    HttpEntity entity1 = response1.getEntity();
-                    // do something useful with the response body
-                    InputStream is = entity1.getContent();
-                    String output = IOUtils.toString(is, "UTF-8");
-                    System.out.println(output);
-
-                    processmessage();
-                    response1.close();
+                    threadSleep(interval_1 * Constants.MILLISECOND_MULTIPLIER);
+                    totalTime += interval_1;
+                    lastTwoSecondsStatus = Utils.callApi(httpclient, apiMethod, apiUrl, headers, params);
+                    if (totalTime % interval_2 == 0) {
+                        lastSixSecondsStatus = lastTwoSecondsStatus;
+                    }
                 }
 
-                String removeApplicationUri = "http://" + apimHost + ":" + apimPort + Constants.APIM_APPLICATION_REMOVE;
-                Utils.removeApplication(httpclient, removeApplicationUri, appName);
-
             } catch (IOException e) {
-                System.err.println("Exception during monitoring: " + e.getMessage());
+                logger.error("Exception during monitoring: " + e.getMessage());
             } finally {
                 try {
                     if (httpclient != null) {
                         httpclient.close();
                     }
                 } catch (Exception e) {
-                    System.err.println("Exception during closing http client: " + e.getMessage());
+                    logger.error("Exception during closing http client: " + e.getMessage());
                 }
             }
         }
 
-        private void processmessage() {
+        private void threadSleep(int milliseconds) {
             try {
-                Thread.sleep(2000);
+                Thread.sleep(milliseconds);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                logger.error("Error occurred in threads...");
             }
         }
     }

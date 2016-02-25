@@ -21,10 +21,26 @@ apis:
         parameters:
             x: 5
             y: 10
+    PhoneVerification:
+            apiMethod: GET
+            apiUrl: https://localhost:8243/phoneverify/1.0.0/CheckPhoneNumber
+            apiVersion: 1.0.0
+            apiProvider: admin
+            apiTier: Unlimited
+            parameters:
+                PhoneNumber: 2342
+                LicenseKey: 2433242
+#    PhoneVerification:
+#                apiMethod: GET
+#                apiUrl: https://localhost:8243/phoneverify/1.0.0/wrongQuery
+#                apiVersion: 1.0.0
+#                apiProvider: admin
+#                apiTier: Unlimited
+#                parameters:
 # DAS credentials
 dasUsername: admin
 dasPassword: admin
 # DAS configurations
 # Use HTTPS endpoint
-dasReceiverUrl: https://localhost:9460/endpoints/healthMonitorReceiver
+dasReceiverUrl: https://localhost:9460/endpoints/healthMonitorIntervals_1_Receiver
 ...
