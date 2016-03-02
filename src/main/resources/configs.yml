@@ -1,10 +1,16 @@
 ---
+#Health monitor properties
+trustStorePath: src/main/resources/client-truststore.jks
+# Security
+encryptionKey: ThisIsSpartaThisIsSparta
 #APIM Creadentials
 apimUsername: admin
-apimPassword: admin
+apimPassword: 07WfylTarjY=
 #APIM configs
 apimHost: localhost
 apimPort: 9763
+apimGatewayPort: 8243
+clientName: myTestClient1
 applicationName: MyHealthMonitorTestApplication
 applicationTier: Unlimited
 applicationAuthorizedDomains: ALL
@@ -13,23 +19,29 @@ applicationKeyValidityTime: -1
 #APIs
 apis:
     CalculatorAPI:
-        apiMethod: GET
-        apiUrl: https://localhost:8243/calc/1.0/add
+        apiContext: calc/1.0
         apiVersion: 1.0
         apiProvider: admin
         apiTier: Unlimited
-        parameters:
-            x: 5
-            y: 10
+        apiResources:
+            [add, GET]:
+                parameters:
+                    x: 5
+                    y: 10
+            [divide, GET]:
+                parameters:
+                    x: 255
+                    y: 15
     PhoneVerification:
-            apiMethod: GET
-            apiUrl: https://localhost:8243/phoneverify/1.0.0/CheckPhoneNumber
-            apiVersion: 1.0.0
-            apiProvider: admin
-            apiTier: Unlimited
-            parameters:
-                PhoneNumber: 2342
-                LicenseKey: 2433242
+        apiContext: phoneverify/1.0.0
+        apiVersion: 1.0.0
+        apiProvider: admin
+        apiTier: Unlimited
+        apiResources:
+            [CheckPhoneNumber, GET]:
+                parameters:
+                    PhoneNumber: 2342
+                    LicenseKey: 2433242
 #    PhoneVerification:
 #                apiMethod: GET
 #                apiUrl: https://localhost:8243/phoneverify/1.0.0/wrongQuery
@@ -39,8 +51,8 @@ apis:
 #                parameters:
 # DAS credentials
 dasUsername: admin
-dasPassword: admin
+dasPassword: 07WfylTarjY=
 # DAS configurations
 # Use HTTPS endpoint
-dasReceiverUrl: https://localhost:9460/endpoints/healthMonitorIntervals_1_Receiver
+dasReceiverUrl: https://localhost:9460/endpoints/newHealthMonitorReceiver
 ...
