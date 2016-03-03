@@ -3,12 +3,15 @@
  */
 public class Constants {
 
+    // Configs
+    public static final String CONFIGS_PATH = "src/main/resources/configs.yml";
+
     // Urls of APIM
     public static final String CLIENT_REGISTRATION_PATH = "/client-registration/v0.9";
     public static final String APIM_STORE_PATH = "/api/am/store/v0.9";
 
     // Time intervals (in milliseconds)
-    public static final int INTERVAL = 1000;
+    public static final int INTERVAL = 2000;
 
     // DAS stream attributes
     public static final String API_NAME = "api_name";

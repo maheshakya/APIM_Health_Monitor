@@ -22,7 +22,7 @@ public class Security {
     private String encryptionKey;
     private String encryptionScheme;
 
-    // Need to handle exceptions properly!!!
+    // TODO - Need to handle exceptions properly!!!
 
     public Security(String encryptionKey) throws Exception {
         this.encryptionKey = encryptionKey;
@@ -42,7 +42,7 @@ public class Security {
             byte[] encryptedText = cipher.doFinal(plainText);
             encryptedString = new String(Base64.encodeBase64(encryptedText));
         } catch (Exception e) {
-            e.printStackTrace();
+
         }
         return encryptedString;
     }
@@ -55,7 +55,7 @@ public class Security {
             byte[] plainText = cipher.doFinal(encryptedText);
             decryptedText = new String(plainText);
         } catch (Exception e) {
-            e.printStackTrace();
+
         }
         return decryptedText;
     }

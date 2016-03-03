@@ -1,8 +1,5 @@
 import java.io.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import org.apache.axis2.util.Base64;
 import org.apache.commons.io.IOUtils;
@@ -28,13 +25,13 @@ public class Utils {
 
     // New set
 
-    public static Map<String, Object> readConfigs() {
+    public static Map<String, Object> readConfigs(String path) {
         // Init Yaml
         Yaml yaml = new Yaml();
         Map<String, Object> configs = null;
 
         try {
-            InputStream ios = new FileInputStream("src/main/resources/configs.yml");
+            InputStream ios = new FileInputStream(path);
             // Parse the YAML file and return the output as a series of Maps and Lists
             configs = (Map<String, Object>) yaml.load(ios);
             logger.debug("Read configs...");
@@ -404,5 +401,22 @@ public class Utils {
             logger.error("Error occurred while publishing to DAS", e);
         }
 
+    }
+
+    public static void writeToFile(String filePath, HashMap<String, String> entries) {
+        Yaml yaml = new Yaml();
+        FileWriter writer = null;
+        try {
+            writer = new FileWriter(filePath);
+        } catch (IOException e) {
+            logger.error("Error occurred while writing to file.", e);
+        }
+        yaml.dump(entries, writer);
+    }
+
+    public static boolean validateApiConfig(LinkedHashMap<String, LinkedHashMap> api) {
+        boolean isValid = true;
+        // TODO
+        return isValid;
     }
 }

@@ -3,6 +3,7 @@
 trustStorePath: src/main/resources/client-truststore.jks
 # Security
 encryptionKey: ThisIsSpartaThisIsSparta
+clientEntriesPath: src/main/resources/clientEntries.yml
 #APIM Creadentials
 apimUsername: admin
 apimPassword: 07WfylTarjY=
@@ -10,7 +11,7 @@ apimPassword: 07WfylTarjY=
 apimHost: localhost
 apimPort: 9763
 apimGatewayPort: 8243
-clientName: myTestClient1
+clientName: MyTestClient_101
 applicationName: MyHealthMonitorTestApplication
 applicationTier: Unlimited
 applicationAuthorizedDomains: ALL

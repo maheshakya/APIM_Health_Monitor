@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.apache.commons.lang.RandomStringUtils;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.log4j.Logger;
@@ -23,14 +22,15 @@ public class HealthMonitor {
 
         logger.info("Starting...");
 
-        Map<String, Object> configs = Utils.readConfigs();
+        Map<String, Object> configs = Utils.readConfigs(Constants.CONFIGS_PATH);
 
         String trustStorePath = (String) configs.get("trustStorePath");
         String encryptionKey = (String) configs.get("encryptionKey");
+        String clientEntriesPath = (String) configs.get("clientEntriesPath");
         String appName = (String) configs.get("applicationName");
         String userName = (String) configs.get("apimUsername");
         String password = (String) configs.get("apimPassword");
-        String clientName = (String) configs.get("clientName"); // not being used because unregister is not here yet.
+        String clientName = (String) configs.get("clientName");
         String host = (String) configs.get("apimHost");
         String port = String.valueOf(configs.get("apimPort"));
         String gatewayPort = String.valueOf(configs.get("apimGatewayPort"));
@@ -47,7 +47,7 @@ public class HealthMonitor {
                 || clientName == null || host == null || port == null || gatewayPort == null || appTier == null
                 || appAuthorizedDomains == null || appKeyType == null || appKeyValidationTime == null
                 || dasUsername == null || dasPassword == null || dasReceiverUrl == null) {
-            logger.error("One of the required configurations is missing.");
+            logger.error("One or many of the required configurations are missing.");
             System.exit(1);
         }
 
@@ -70,25 +70,48 @@ public class HealthMonitor {
 
         // Get client id and client secret
         // temp client name
-        clientName = RandomStringUtils.randomAlphabetic(10);
+//        clientName = RandomStringUtils.randomAlphabetic(10);
 
-        String dcrEndpointURL = "http://" + host + ":" + port + Constants.CLIENT_REGISTRATION_PATH + "/register";
-        String applicationRequestBody = " {\n" +
-                " \"callbackUrl\": \"www.google.lk\",\n" +
-                " \"clientName\": \"" + clientName + "\",\n" +
-                " \"tokenScope\": \"Production\",\n" +
-                " \"owner\": \"" + userName + "\",\n" +
-                " \"grantType\": \"password refresh_token\",\n" +
-                " \"saasApp\": true\n" +
-                " }";
+        // Check whether client is created before
+        String clientId;
+        String clientSecret;
+        Map<String, Object> clientDetails = Utils.readConfigs(clientEntriesPath);
 
-        HashMap<String, String> clientInfo = Utils.registerClient(httpClient, userName, password, dcrEndpointURL,
-                applicationRequestBody);
-        
-        logger.info("Client : " + clientName + " registered.");
+        // If client is already registered
+        if (clientDetails != null) {
+            clientId = security.decrypt((String) clientDetails.get("clientId"));
+            clientSecret = security.decrypt((String) clientDetails.get("clientSecret"));
 
-        String clientId = clientInfo.get("clientId");
-        String clientSecret = clientInfo.get("clientSecret");
+            if (clientId == null || clientSecret == null) {
+                logger.error("Client Id or client secret is not available");
+                System.exit(1);
+            }
+            logger.info("Client : " + clientName + " information retrieved.");
+        } else {
+            // Register new client
+            String dcrEndpointURL = "http://" + host + ":" + port + Constants.CLIENT_REGISTRATION_PATH + "/register";
+            String applicationRequestBody = " {\n" +
+                    " \"callbackUrl\": \"www.google.lk\",\n" +
+                    " \"clientName\": \"" + clientName + "\",\n" +
+                    " \"tokenScope\": \"Production\",\n" +
+                    " \"owner\": \"" + userName + "\",\n" +
+                    " \"grantType\": \"password refresh_token\",\n" +
+                    " \"saasApp\": true\n" +
+                    " }";
+
+            HashMap<String, String> clientInfo = Utils.registerClient(httpClient, userName, password, dcrEndpointURL,
+                    applicationRequestBody);
+
+            logger.info("Client : " + clientName + " registered.");
+
+            clientId = clientInfo.get("clientId");
+            clientSecret = clientInfo.get("clientSecret");
+
+            HashMap<String, String> clientEntries = new HashMap<String, String>();
+            clientEntries.put("clientId", security.encrypt(clientId));
+            clientEntries.put("clientSecret", security.encrypt(clientSecret));
+            Utils.writeToFile(clientEntriesPath, clientEntries);
+        }
 
         // getting access token from client secret
         String requestBody = "grant_type=password&username=" + userName +
@@ -99,7 +122,7 @@ public class HealthMonitor {
         HashMap<String, String> clientAccessToken = Utils.getAccessToken(httpClient, clientId, clientSecret,
                 tokenEndpointURL, requestBody);
 
-        logger.info("Client access token generated.");
+        logger.info("Client access token retrieved.");
         
         String refreshToken = clientAccessToken.get("refreshToken");
         String accessToken = clientAccessToken.get("accessToken");
@@ -120,6 +143,9 @@ public class HealthMonitor {
         logger.info("Application : " + appName + " retrieved.");
 
         // Get application key
+        String applicationAccessToken = Utils.getApplicationKey(httpClient, applicationUrl, accessToken, applicationId);
+
+        // If application key is not available, generate application key
         // Application key data and url is being used during API call to refresh tokens, hence initialing early
         String applicationKeyData = " {\n" +
                 " \"validityTime\": \"" + appKeyValidationTime + "\",\n" +
@@ -128,16 +154,13 @@ public class HealthMonitor {
                 " }";
         String applicationKeyUrl = "http://" + host + ":" + port
                 + Constants.APIM_STORE_PATH + "/applications/generate-keys?applicationId=" + applicationId;
-
-        String applicationAccessToken = Utils.getApplicationKey(httpClient, applicationUrl, accessToken, applicationId);
-        // If application key is not available, generate application key
         if (applicationAccessToken == null) {
             applicationAccessToken = Utils.generateApplicationKey(httpClient, applicationKeyUrl, accessToken,
                     applicationKeyData);
 
         }
 
-        logger.info("Application access token generated.");
+        logger.info("Application access token retrieved.");
 
         // Get APIs
         LinkedHashMap<String, LinkedHashMap> apis = (LinkedHashMap<String, LinkedHashMap>) configs.get("apis");
@@ -154,20 +177,22 @@ public class HealthMonitor {
         String subscriptionRequestBody;
         for (String api : apis.keySet()) {
             apiConfig = apis.get(api);
-            apiIdentifier = apiConfig.get("apiProvider") + "-" + api + "-" + apiConfig.get("apiVersion");
-            subscribedApplications = Utils.getSubscribeApplications(httpClient, apiSubscriptionUrl, accessToken,
-                    apiIdentifier);
-            // If subscribed applications does not contain this application, subscribe this application
-            if (!subscribedApplications.contains(applicationId)) {
-                subscriptionRequestBody = " {\n" +
-                        " \"tier\": \"" + apiConfig.get("apiTier") + "\",\n" +
-                        " \"apiIdentifier\": \"" + apiIdentifier + "\",\n" +
-                        " \"applicationId\": \"" + applicationId + "\"\n" +
-                        " }";
-                Utils.addSubscription(httpClient, apiSubscriptionUrl, accessToken, subscriptionRequestBody);
-            }
+            if (Utils.validateApiConfig(apiConfig)) {
+                apiIdentifier = apiConfig.get("apiProvider") + "-" + api + "-" + apiConfig.get("apiVersion");
+                subscribedApplications = Utils.getSubscribeApplications(httpClient, apiSubscriptionUrl, accessToken,
+                        apiIdentifier);
+                // If subscribed applications does not contain this application, subscribe this application
+                if (!subscribedApplications.contains(applicationId)) {
+                    subscriptionRequestBody = " {\n" +
+                            " \"tier\": \"" + apiConfig.get("apiTier") + "\",\n" +
+                            " \"apiIdentifier\": \"" + apiIdentifier + "\",\n" +
+                            " \"applicationId\": \"" + applicationId + "\"\n" +
+                            " }";
+                    Utils.addSubscription(httpClient, apiSubscriptionUrl, accessToken, subscriptionRequestBody);
+                }
 
-            logger.info("Subscribed to API : " + api + ".");
+                logger.info("Subscribed to API : " + api + ".");
+            }
         }
 
         // Get all resources of APIs
@@ -181,8 +206,10 @@ public class HealthMonitor {
                         .get("parameters");
                 HashMap<String, String> parameters = new HashMap<String, String>();
 
-                for (String param : paramMap.keySet()) {
-                    parameters.put(param, String.valueOf(paramMap.get(param)));
+                if (paramMap != null) {
+                    for (String param : paramMap.keySet()) {
+                        parameters.put(param, String.valueOf(paramMap.get(param)));
+                    }
                 }
 
                 ApiResource apiResource = new ApiResource(api, String.valueOf(apiConfig.get("apiVersion")),
@@ -271,7 +298,7 @@ public class HealthMonitor {
                 // Check whether there's an authorization error
                 if (results.get(0).equals("401")) {
                     String errorCode = Utils.getErrorCode(results.get(1));
-                    // If error code is 900901, there application access token has expired
+                    // If error code is 900901, the application access token has expired
                     if (errorCode.equals("900901")) {
                         // Generate new token
                         applicationAccessToken = Utils.generateApplicationKey(httpClient, applicationKeyUrl,
